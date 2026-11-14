@@ -26,6 +26,7 @@ button:focus-visible{outline:5px solid var(--ok);outline-offset:3px}
 .sm{font-size:.9rem;min-height:44px;width:auto;display:inline-block}
 footer{margin-top:20px;background:var(--pink);border-radius:16px;padding:12px;text-align:center;font-weight:800;font-size:.85rem}
 [hidden]{display:none!important}
+.music{max-width:320px;margin:12px auto}.music iframe{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:12px}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800&display=swap"></head><body><main id="app">
 <div class="tag">Skills for the Future · Kỹ năng cho Tương lai</div>
@@ -38,11 +39,13 @@ footer{margin-top:20px;background:var(--pink);border-radius:16px;padding:12px;te
 <div id="stage"><button class="main" id="go">▶ Nhận câu hỏi để mở 1 mảnh</button></div>
 <div class="msg" id="status" role="status" aria-live="assertive" hidden></div>
 <p><button class="sm" id="rst" hidden>↺ Chơi lại từ đầu</button></p>
+<div class="music" id="music" hidden><div id="youtube-player"></div></div>
 <footer>Skills for the Future · Kỹ năng cho Tương lai</footer>
 </main>
 <script>
 const MSG="Cả lớp đã cùng mở cửa trái tim và khám phá 12 câu hỏi về khởi nghiệp!";
 const N=12;
+const CORRECT_VIDEO="BzIa1EPtNW0",FINAL_VIDEO="K6GrSPFPGBs";
 const Q=[
  {text:"Tinh thần khởi nghiệp là gì?",options:["Sở hữu một doanh nghiệp","Tạo ra các giá trị thông qua việc giải quyết các vấn đề có ý nghĩa","Trở nên giàu có","Kiếm tiền"],answer:1},
  {text:"Hình thức khởi nghiệp tạo ra hàng hóa hoặc dịch vụ mà khách hàng sẵn sàng chi trả.",options:["Khởi nghiệp truyền thống","Khởi nghiệp xã hội","Khởi nghiệp xanh","Khởi nghiệp số"],answer:0},
@@ -58,22 +61,30 @@ const Q=[
  {text:"Cơ hội tạo ra giá trị có chỉ xuất hiện trong kinh doanh hay thành lập doanh nghiệp không?",answer:"Không. Giá trị có thể được tạo ra trong công việc, tổ chức, cộng đồng, dịch vụ công và nhiều bối cảnh khác."}
 ];
 const $=id=>document.getElementById(id);
-let ci=0,opened=new Set(),cur=null,busy=false,done=false,audioCtx=null;
+let ci=0,opened=new Set(),cur=null,busy=false,done=false,player=null,youtubeReady=false,playerRequested=false,pendingVideo=null,finalSongQueued=false;
 $("grid").innerHTML=Array.from({length:N},(_,i)=>`<div class="t" id="t${i}" aria-hidden="true"><span>🔒</span>Câu ${i+1}</div>`).join("");
 function say(t,bad,q){const s=$("status");s.hidden=false;s.className="msg"+(bad?" bad":"")+(q?" sr":"");s.textContent=t}
 function buzz(p){try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}}
-function playCelebration(){
- const AudioContextClass=window.AudioContext||window.webkitAudioContext;
- if(!AudioContextClass)return;
- audioCtx=audioCtx||new AudioContextClass();
- if(audioCtx.state==="suspended")audioCtx.resume();
- const notes=[523.25,659.25,783.99,1046.5],start=audioCtx.currentTime;
- notes.forEach((frequency,i)=>{
-  const oscillator=audioCtx.createOscillator(),gain=audioCtx.createGain(),at=start+i*.16;
-  oscillator.type="sine";oscillator.frequency.value=frequency;
-  gain.gain.setValueAtTime(.001,at);gain.gain.exponentialRampToValueAtTime(.13,at+.025);gain.gain.exponentialRampToValueAtTime(.001,at+.15);
-  oscillator.connect(gain);gain.connect(audioCtx.destination);oscillator.start(at);oscillator.stop(at+.16);
+function createYouTubePlayer(){
+ if(!youtubeReady||player||!playerRequested)return;
+ $("music").hidden=false;
+ player=new YT.Player("youtube-player",{
+  width:"320",height:"180",videoId:CORRECT_VIDEO,
+  playerVars:{playsinline:1,rel:0},
+  events:{
+   onReady:()=>{
+    if(pendingVideo){const video=pendingVideo;pendingVideo=null;player.loadVideoById(video)}
+   },
+   onStateChange:event=>{
+    if(event.data===YT.PlayerState.ENDED&&finalSongQueued){finalSongQueued=false;playVideo(FINAL_VIDEO)}
+   },
+   onError:event=>say(`Không phát được nhạc YouTube (mã lỗi ${event.data}). Hãy kiểm tra kết nối hoặc cài đặt video.`,true)
+  }
  });
+}
+function playVideo(video){
+ pendingVideo=video;
+ if(player&&youtubeReady){pendingVideo=null;player.loadVideoById(video)}
 }
 function render(){
  for(let i=0;i<N;i++)$("t"+i).classList.toggle("o",opened.has(i));
@@ -86,14 +97,16 @@ function render(){
 function showGo(){$("stage").innerHTML='<button class="main" id="go">▶ Nhận câu hỏi để mở 1 mảnh</button>';$("go").onclick=ask}
 function ask(){
  if(opened.size>=N)return;
- ci=opened.size;cur=Q[ci];
+ const remaining=Q.map((_,i)=>i).filter(i=>!opened.has(i));
+ ci=remaining[Math.floor(Math.random()*remaining.length)];cur=Q[ci];
+ playerRequested=true;createYouTubePlayer();
  const L="ABCD";
  $("stage").innerHTML=`<h2 id="q" tabindex="-1">Câu ${ci+1}. ${cur.text}</h2>`+
   (cur.options?cur.options.map((o,i)=>`<button class="opt" data-i="${i}"><b>${L[i]}.</b> ${o}</button>`).join(""):'<button class="main" id="reveal">💬 Thảo luận — hiện đáp án</button><div class="msg" id="answer" hidden></div>');
  if(cur.options)document.querySelectorAll(".opt").forEach(b=>b.onclick=()=>pick(+b.dataset.i));
  else $("reveal").onclick=()=>{
   $("answer").textContent="Đáp án: "+cur.answer;$("answer").hidden=false;
-  $("reveal").textContent="✓ Cả lớp trả lời đúng rồi — mở mảnh";
+  $("reveal").textContent="Đáp án ngay bên dưới - mở mảnh";
   $("reveal").onclick=()=>pick(0);
  };
  $("q").focus();
@@ -105,7 +118,8 @@ function pick(i){
  busy=true;
  const k=ci;
  opened.add(k);
- playCelebration();
+ finalSongQueued=opened.size===N;
+ playVideo(CORRECT_VIDEO);
  buzz([120,60,120]);
  say(`Đúng rồi! Bạn đã mở mảnh Câu ${k+1}. Cảm ơn bạn đã góp một mảnh cho cả lớp!`);
  render();busy=false;
@@ -114,8 +128,10 @@ function pick(i){
 $("go").onclick=ask;
 function restart(){
  if(!confirm("Chơi lại từ đầu? Tiến độ hiện tại sẽ được xóa."))return;
- opened.clear();done=false;$("rst").hidden=true;$("status").hidden=true;document.body.classList.remove("flash");render();showGo();
+ opened.clear();done=false;finalSongQueued=false;pendingVideo=null;if(player)player.stopVideo();$("rst").hidden=true;$("status").hidden=true;document.body.classList.remove("flash");render();showGo();
 }
 $("rst").onclick=restart;
+window.onYouTubeIframeAPIReady=()=>{youtubeReady=true;createYouTubePlayer()};
+const youtubeApi=document.createElement("script");youtubeApi.src="https://www.youtube.com/iframe_api";youtubeApi.async=true;youtubeApi.onerror=()=>say("Không tải được trình phát YouTube. Hãy kiểm tra kết nối mạng.",true);document.head.appendChild(youtubeApi);
 render();
 </script></body></html>
